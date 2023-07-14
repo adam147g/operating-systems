@@ -1,0 +1,36 @@
+number of processes, n: 1, width: 0.00000000100000000
+Program time: 4.167297s
+Result: 3.141593
+
+number of processes, n: 1, width: 0.00000010000000000
+Program time: 0.050039s
+Result: 3.141593
+
+number of processes, n: 2, width: 0.00000000100000000
+Program time: 2.649558s
+Result: 3.141592
+
+number of processes, n: 2, width: 0.00000010000000000
+Program time: 0.038724s
+Result: 3.141592
+
+number of processes, n: 5, width: 0.00000000100000000
+Program time: 1.240284s
+Result: 3.141592
+
+number of processes, n: 5, width: 0.00000010000000000
+Program time: 0.042285s
+Result: 3.141593
+
+number of processes, n: 10, width: 0.00000000010000000
+Program time: 8.871339s
+Result: 3.141594
+
+number of processes, n: 10, width: 0.00000000100000000
+Program time: 0.942600s
+Result: 3.141594
+
+number of processes, n: 10, width: 0.00000010000000000
+Program time: 0.070095s
+Result: 3.141594
+

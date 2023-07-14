@@ -1,0 +1,565 @@
+Laboratorium 1
+Funkcje czekania:
+#include <unistd.h> -> unsigned int sleep(unsigned int seconds) np: sleep(5) zatrzumuje program w danym miejscu na 5s
+#include <time.h> -> int nanosleep(const struct timespec *req, struct timespec *rem) zatrzymuje program na okreslona liczbe ns
+struct timespec { time_t tv_sec; long tv_nsec } - struktura zawierajaca czas w sekundach i nano sekundach
+(end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0; -> Pomiar czasu z wykorzystaniem timespec
+
+Zegary POSIX:
+Typ danych clock_t – reprezentuje takty zegara
+Typ danych clockid_r – reprezentuje określony zegar Posix
+Są 4 rodzaje zegarów – zalecany to CLOCK_REALTIME – ogólnosystemowy zegar czasu rzeczywistego
+
+#include <time.h>
+int clock_getres(clockid_t clk_id, struct timespec *res) – odczytuje rozdzielczość zegara wyspecyfikowanego w parametrze clk_id
+int clock_gettime(clockid_t clk_id, struct timespec *tp) – pobranie wartości zegara
+int clock_settime(clockid_t clk_id, const struct timespec *tp) - ustawienie wartości zegara
+
+#include <sys/times.h>
+clock_t times(struct tms *buffer);
+Pole struktury tms:
+tms_utime – czas cpu wykonywania procesu w trybie użytkownika
+tms_stime – czas cpu wykonywania procesu w trybie jądra
+tms_cutime – suma czasów cpu wykonywania procesu i wszystkich jego potomków w trybie użytkownika
+tms_cstime - suma czasów cpu wykonywania procesu i wszystkich jego potomków w trybie jądra
+
+BIBLIOTEKA STATYCZNA:
+static: $(LIBNAME).c // nazwa_biblioteki.c
+	$(CC) $(CFLAGS) $(OFLAG) -c $(LIBNAME).c // gcc -Wall -c nazwa_biblioteki.c
+	ar rcs $(LIBNAME).a $(LIBNAME).o // ar rcs nazwa_biblioteki.a nazwa_biblioteki.o
+	$(CC) $(CFLAGS) -c $(OFLAG) $(MAIN_FILE_NAME).c // gcc -Wall -c main.c
+	$(CC) $(CFLAGS) $(OFLAG) $(MAIN_FILE_NAME).o $(LIBNAME).o -o $(MAIN_FILE_NAME_STATIC) // gcc -Wall main.o nazwa_biblioteki.o -o nazwa_biblioteki_statycznej
+
+BIBLIOTEKA WSPOLDZIELONA:
+shared: $(LIBNAME).c // nazwa_biblioteki.c
+	$(CC) $(CFLAGS) $(OFLAG) -fPIC -c $(LIBNAME).c // gcc -Wall -fPIC (potrzebna do kompilacji biblioteki wspoldzielonej) -c nazwa_biblioteki.c
+	$(CC) $(CFLAGS) -shared -fPIC -o lib$(LIBNAME).so $(LIBNAME).o // gcc -Wall -shared -fPIC -o libnazwa_biblioteki.so nazwa_biblioteki.o
+	$(CC) $(CFLAGS) $(OFLAG) $(MAIN_FILE_NAME).c -o $(MAIN_FILE_NAME_SHARED) -L. -lmylib -Wl,-rpath=`pwd`
+	// gcc -Wall main.c -o nazwa_biblioteki_wspoldzielonej -L. -lmylib -Wl -rpath=`pwd` Szukaj biblioteki w katalogu w ktorym znajduje sie program glowny
+
+BIBLIOTEKA DYNAMICZNA:
+dynamic: $(LIBNAME).c
+	$(CC) $(CFLAGS) $(OFLAG) -fPIC -c $(LIBNAME).c
+	$(CC) $(CFLAGS) -fPIC -shared -o $(LIBNAME).so $(LIBNAME).o
+	// Do tego momentu identycznie jak wspoldzielona
+	$(CC) $(CFLAGS) $(OFLAG) -fPIC $(MAIN_FILE_NAME).c -o $(MAIN_FILE_NAME_DYNAMIC) -L. -ldl -D DLL
+    // gcc -Wall -O0 -fPIC main.c -o nazwa_biblioteki_dynamicznej -L. -ldl -D DLL
+    // -D DLL ustawia dyrektywe preprocesora DLL nastepnie w kodzie pliku main:
+    #include <dlfcn.h>
+    #ifdef DLL
+        void *handle = dlopen("./mylib.so", RTLD_LAZY);
+
+        BlockList* (*createBlockList)(size_t) = dlsym(handle, "createBlockList");
+        void (*countFile)(BlockList*, const char*) = dlsym(handle, "countFile");
+        void* (*getBlock)(BlockList*, size_t) = dlsym(handle, "getBlock");
+        void (*deleteBlock)(BlockList*, size_t) = dlsym(handle, "deleteBlock");
+        void (*freeBlockList)(BlockList*) = dlsym(handle, "freeBlockList");
+    #endif
+    #ifdef DLL
+        dlclose(handle);
+    #endif
+    // Tylko gdy dana jest dyrektywa preprocesora DLL otwieramy biblioteke i pobieramy wskazniki na funkcje
+
+
+
+Laboratorium 2
+
+Korzystanie z funkcji systemowych do obsługi plików wymaga dołączenia bibliotek: <fcntl.h> <unistd.h> <sys/types.h> <sys/stat.h>
+Funkcje systemowe obslugi plikow:
+Otwarcie pliku:
+int open(const char *pathname, int flags[, mode_t mode]);
+int creat(const char *pathname, mode_t mode);
+
+open zwraca -1 gdy wystapil blad i ustawia errno na wartosc okreslajaca przyczyne bledu
+O_RDONLY 	Otwiera plik do odczytu
+O_WRONLY 	Otwiera plik do zapisu
+O_RDWR 	    Otwiera plik do zapisu i odczytu
+
+Powyzsze flagi mozemy laczyc bitowym OR z ponizszymi:
+O_CREAT 	Utworzenie pliku, jeżeli nie istnieje.
+O_TRUNC 	Obcięcie pliku, jeśli plik istnieje i otwierany jest w trybie O_WRONLY lub O_RDWR
+O_EXCL 	    Powoduje zgłoszenie błędu jeśli plik już istnieje i otwierany jest z flagą O_CREAT
+O_APPEND 	Operacje pisania odbywają się na końcu pliku
+
+Odczyt i zapis pliku:
+
+int read(inf fd, void *buf, size_t count);
+
+    próbuje wczytać podana liczbę bajtów (count) z pliku o podanym deskryptorze (fd) do podanego bufora (buf); 
+    bieżąca pozycja w pliku przesuwa się o tyle, ile bajtów przeczytano,
+    read() zwraca ilość bajtów naprawdę przeczytanych (zawracana wartość może być mniejsza od nbytes !)
+    gdy "bieżąca pozycja" przekroczy koniec pliku, to read() zwraca 0
+
+Funkcja read automatycznie przesuwa pozycje w pliku i wraca ilosc odczytanych bajtow
+
+int write(inf fd, void *buf, size_t count);
+
+    zapis  zawartości bufora do pliku, argumenty analogiczne do read.
+
+Ustawianie pozycji w pliku:
+long lseek(inf fd, off_t offset, int whence); - offset - nowa pozycja pliku. whence to jedna z trzech ponizszych wartosci:
+
+Argumenty:
+    fd – deskryptor do pliku na którym operujemy
+    offset – nowa pozycja w pliku
+    whence – parametr służący interpretacji drugiego parametru. Musi być to liczba równa 0, 1 lub 2
+
+Parametr whence funkcji lseek przyjmuje jedną z wartości:
+    SEEK_SET – początek pliku
+    SEEK_END – koniec pliku
+    SEEK_CUR – aktualna pozycja wskaźnika
+
+W przypadku powodzenia funkcja zwraca nowa pozycje w pliku, w przeciwnym wypadku wartość mniejsza od zera.
+
+Zamykanie pliku:
+int close(int fd);
+
+Przykład 
+
+Program kopiujący blokami o rozmiarze 1024B z wykorzystaniem funkcji niskopoziomowych
+
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+int main()
+{
+  char blok[1024];
+  int we, wy;
+  int liczyt;
+  we=open("we", O_RDONLY);
+  wy=open("wy",O_WRONLY|O_CREAT,S_IRUSR|S_IWUSR);
+  while((liczyt=read(we,blok,sizeof(blok)))>0)
+      write(wy,blok,liczyt);
+}
+
+Funkcje biblioteki standardowej C
+
+Otwarcie pliku:
+FILE * fopen ( const char * filename, const char * mode ); 
+    zwraca NULL gdy nie udalo sie otworzyć
+
+mode - Atrybuty z jakimi można otworzyć plik:
+r 	Otwiera plik do odczytu
+w 	Otwiera plik do zapisu (kasuje ewentualny poprzedni)
+a 	Otwiera plik do zapisu. Nie kasuje poprzedniego pliku i ustawia wskaźnik na końcu.
+r+ 	Otwiera plik do zapisu i odczytu. Plik musi istnieć.
+w+ 	Otwiera plik do zapisu i odczytu. Jeśli plik istniał to nadpisuje.
+a+ 	Otwiera plik do odczytu i dopisywania. Nie można pisać wcześniej niż na końcu.
+[rwa+]b 	Otwiera plik jako binarny nie tekstowy.
+
+Zapis pliku i odczyt pliku:
+size_t fread ( void * ptr, size_t size, size_t count, FILE * file);
+
+Zwraca liczbe wczytanych elementów, fread przesuwa pozycje w pliku
+
+size_t fwrite ( const void * ptr, size_t size, size_t count, FILE * file); 
+Zwraca liczbe danych ktore udalo sie zapisac
+
+Argumenty:
+    ptr - wskaźnik na tablicę
+    size -rozmiar elementu tablicy
+    count - liczba elementów do odczytu
+    file -plik, na którym wykonywana jest operacja
+
+
+Ustawianie pozycji w pliku:
+int fseek ( FILE * file, long int offset, int mode);
+ 
+Funkcja fseek ustawia pozycję w pliku file na offset w zależności od wartości argumentu mode.
+
+    mode = SEEK_SET (0) - offset liczony jest od początku.
+    mode = SEEK_CUR (1) - offset przesuwany od aktualnej pozycji,
+    mode = SEEK_END (2) - przesuwany o offset od końca pliku (wskaźnik pliku jest przesuwany do pozycji będącej sumą rozmiaru pliku i parametru offset).
+
+Zwraca: Zero gdy funkcja wykonała się pomyślnie, w przypadku błędu wartość niezerowa.
+int fsetpos (FILE* file, fpos_t* pos);
+Funkcja zmienia aktualną pozycję wskaźnika do pliku file na pos.
+Zwraca: Zero gdy funkcja wykonała się pomyślnie, EOF w przypadku wystąpienia błędu
+int fgetpos (FILE* file, fpos_t* pos);
+Funkcja umieszcza w pos aktualną pozycję wskaźnika do pliku file.
+Zwraca: Zero gdy funkcja wykonała się pomyślnie, EOF w przypadku wystąpienia błędu
+
+Zamykanie pliku:
+int fclose ( FILE * stream ); - zwraca 0 jesli pomyslnie zamknieto
+
+Przykład
+
+#include <stdio.h>
+int main ()
+{
+  char napis[20];
+  FILE *plik=fopen("nazwa1.txt", "a+");
+  if(plik)
+  {
+    fread(napis,1, 15,plik);
+    printf("%s",napis);
+    printf("\n");
+    fwrite("Zdanie drugie.", 1, 14, plik);
+    rename("nazwa1.txt","nazwa2.txt");
+    fclose(plik);
+  }
+  return 0;
+} 
+
+
+Katalogi #include <dirent.h>:
+
+DIR – struktura reprezentująca strumień katalogowy
+struct dirent – struktura, która zawiera:
+    ino_t d_ino – numer i-węzła pliku
+    char d_name[] – nazwa pliku
+
+DIR* opendir(const char* dirname)
+Otwiera strumień do katalogu znajdującego się pod ścieżką dirname. Zwraca wskaźnik do obiektu typu DIR lub NULL.
+
+int closedir(DIR* dirp)
+Zamyka strumień katalogowy dirp. zwraca wartość 0, przy błędzie zwraca -1 i zapisuje kod błędu w zmiennej errno.
+
+struct dirent* readdir(DIR* dirp)
+
+Zwraca wskaźnik do struktury reprezentującej plik w obecnej pozycji w strumieniu dirp i awansuje pozycję na następny 
+plik w kolejce. Zwrócony wskaźnik do obiektu struct dirrent nie powinien być zwolniony. 
+Jeśli nie ma już więcej plików w katalogu, wartość NULL jest zwrócona. 
+Gdy wystąpi błąd, wartość NULL także jest zwrócona i powód jest zapisany w zmiennej errno
+
+void rewinddir(DIR* dirp)
+Ustawia strumień katalogowy na początek.
+
+void seekdir(DIR* dirp, long int loc)
+Zmienia pozycję strumienia katalogowego.
+
+int stat (const char *path, struct stat *buf); - pobranie statusu pliku
+wejście: 	
+    path - nazwa sprawdzanego pliku
+    buf - bufor na strukturę stat
+    err - Po sukcesie zwracane jest zero. Po błędzie -1 i ustawiane jest 'errno':
+rezultat: 	
+    EBADF - 'filedes' jest nieprawidłowy.
+    ENOENT - Plik nie istnieje.
+
+int lstat(const char *ścieżka, struct stat *statystyka); 
+jak stat(), ale nie zwraca on statusu plików, a status samego linku.
+
+
+STRUKTURA STAT
+struct stat
+	{
+	    dev_t         	st_dev;      /* urządzenie */
+	    ino_t         	st_ino;      /* inode */
+	    umode_t       	st_mode;     /* ochrona */
+	    nlink_t       	st_nlink;    /* liczba hardlinków */
+	    uid_t         	st_uid;      /* ID użytkownika właściciela */
+	    gid_t         	st_gid;      /* ID grupy właściciela */
+	    dev_t         	st_rdev;     /* typ urządzenia (jeśli urządzenie inode) */
+	    off_t         	st_size;     /* całkowity rozmiar w bajtach */
+	    unsigned long 	st_blksize;  /* wielkość bloku dla I/O systemu plików */
+	    unsigned long 	st_blocks;   /* ilość zaalokowanych bloków */
+	    time_t        	st_atime;    /* czas ostatniego dostępu */
+	    time_t        	st_mtime;    /* czas ostatniej modyfikacji */
+	    time_t        	st_ctime;    /* czas ostatniej zmiany */
+	};
+iint mkdir (const char *path, mode_t mode); - tworzenie katalogu z uprawnieniami podanymi w mode
+
+int rmdir (const char *path); - usuwanie katalogu
+
+int chdir (const char *path); - argument path staje się nowym katalogiem bieżącym dla programu.
+
+char *getcwd (char *folder_name, ssize_t size); - funkcja wpisuje do folder_name bieżący katalog roboczy o rozmiarze size.
+
+int chmod (const char *path, mode_t new); - zmiana uprawnień do pliku.
+
+int chown (const char *path, uid_t id_wlaściciela, gid_t id_grupy); - zmiana właściciela.
+
+int link (const char *path, const char *nowa); - stworzenie twardego linku do pliku. Usunięcie łącza – funkcja ulink.
+
+int nftw(const char *dir, int(*fn) (), int nopend, int flags)
+wejście: 	
+    dir - katalog główny drzewa do przeglądnięcia
+    fn - funkcja wywoływana dla każdego przeglądanego elementu w drzewie
+    nopenfd - maksymalna ilość otwieranych przez funkcję deskryptorów
+    flags - znaczniki definiujące zachowanie funkcji
+rezultat: 	
+    err - w przypadku powodzenia zwracana jest wartość 0, w przypadku błędu zwracana jest wartość -1.
+
+opis: przegląd drzewa katalogów. Funkcja ftw() przechodzi przez drzewo katalogów startując z okreslonego katalogu 'dir'. 
+Dla każdej znalezionej pozycji w drzewie, wywołuje funkcję 'fn' z pełną nazwą ścieżki do pozycji, wskaźnik na strukturę 
+otrzymaną z funkcji stat(2) dla tej pozycji oraz flagę 'flag' której wartość jest jedną z poniższych wartości:
+
+    FTW_F - pozycja jest normalnym plikiem
+    FTW_D - pozycja jest katalogiem
+    FTW_DNR - pozycja jest katalogiem który nie może być czytany
+    FTW_SL - pozycja jest linkiem symbolicznym
+    FTW_NS - operacja stat nie powiodła się na pozycji która nie jest linkiem symbolicznym
+
+
+LABORATORIUM 3
+Limity procesow
+#include <sys/resource.h>:
+int getrlimit (int resource, struct rlimit *rlptr) Resource to jedno z makr określające rodzaj zasobu
+int setrlimit (int resource, const struct rlimit *rlptr)
+struct rlimit {
+        rlim_t rlim_cur; //bieżące ograniczenie
+        rlim_t rlim_max; //maksymalne ograniczenie
+}
+
+Identyfikatory procesow #include <sys/types.h>:
+pid_t getpid(void) - zwraca PID procesu wywołującego funkcję
+pid_t getppid(void) - zwraca PID procesu macierzystego
+uid_t getuid(void) - zwraca rzeczywisty identyfikator użytkownika UID
+uid_t geteuid(void) - zwraca efektywny identyfikator użytkownika UID
+gid_t getgid(void) - zwraca rzeczywisty identyfikator grupy GID
+gid_t getegid(void) - zwraca efektywny identyfikator grupy GID
+
+Tworzenie procesow:
+pid_t fork(); - tworzy nowy proces. Zwraca identyfikator w nastepujacy sposob. Potomek otrzymuje pid_t = 0. Proces
+macierzysty otrzymuje pid_t nowo utworzonego procesu
+
+pid_t vfork(); - podobny do fork() jednak teraz proces potomny i macierzysty maja dostep do dokladnie tych samych zmeinnych
+W przypadku fork() proces potomny otrzymuje ich kopie. Dodatkowo proces macierzysty jest blokowany przez potomny do momentu
+wywolania funkcji exec lub exit.
+
+Uruchamianie programow:
+int execl(char const *path, char const *arg0, ...) funkcja jako pierwszy argument przyjmuje ścieżkę do pliku,
+następne są argumenty wywołania funkcji, gdzie arg0 jest nazwą programu
+
+int execle(char const *path, char const *arg0, ..., char const * const *envp) podobnie jak execl, ale pozwala na
+podanie w ostatnim argumencie tablicy ze zmiennymi środowiskowymi
+
+int execlp(char const *file, char const *arg0, ...) również przyjmuje listę argumentów ale, nie podajemy tutaj ścieżki
+ do pliku, lecz samą jego nazwę, zmienna środowiskowa PATH zostanie przeszukana w celu zlokalizowania pliku
+
+int execv(char const *path, char const * const * argv) analogicznie do execl, ale argumenty podawane są w tablicy
+
+int execve(char const *path, char const * const *argv, char const * const *envp) analogicznie do execle, również
+argumenty przekazujemy tutaj w tablicy tablic znakowych
+
+int execvp(char const *file, char const * const *argv) analogicznie do execlp, argumenty w tablicy
+Funkcje typu exec zwracaja -1 jesli funkcja zakonczy sie nie poprawnie
+Funkcje typu exec nie tworza nowego procesu. Wywoalnie tego typu funkcji powoduje ze kod znajdujacy sie dalej nie
+zostanie wykonany, chyba ze wystapi blad
+
+Funkcje wait oraz waitpid #include <sys/wait.h>
+pid_t wait ( int *statloc )
+pid_t waitpid( pid_t pid, int *statloc, int options )
+Wywołując wait lub waitpid proces może:
+ulec zablokowaniu (jeśli wszystkie procesy potomne ciągle pracują)
+natychmiast powrócić ze stanem zakończenia potomka (jeśli potomek zakończył pracę i oczekuje na pobranie jego stanu zakończenia)
+natychmiast powrócić z komunikatem awaryjnym (jeśli nie ma żadnych procesów potomnych)
+
+Funkcja wait oczekuje na zakończenie dowolnego potomka (do tego czasu blokuje proces macierzysty). Funkcja waitpid jest
+bardziej elastyczna, posiada możliwość określenia konkretnego PID procesu, na który ma oczekiwać, a także dodatkowe
+opcje (np. nieblokowanie procesu w sytuacji gdy żaden proces potomny się nie zakończył). Argument pid należy interpretować w następujący sposób:
+pid == -1 Oczekiwanie na dowolny proces potomny. W tej sytuacji funkcja waitpid jest równoważna funkcji wait.
+pid > 0 Oczekiwanie na proces o identyfikatorze równym pid.
+pid == 0 Oczekiwanie na każdego potomka, którego identyfikator grupy procesów jest równy identyfikatorowi grupy procesów w procesie wywołującym tę funkcję.
+pid < -1 Oczekiwanie na każdego potomka, którego identyfikator grupy procesów jest równy wartości absolutnej argumentu pid.
+W obydwu przypadkach statloc to wskaźnik do miejsca w pamięci, gdzie zostanie przekazany status zakończenia procesu potomnego
+ (można go zignorować, przekazując wartość NULL).
+
+Konczenie procesow:
+return, exit (stdlib), _exit (unistd) - zakonczenia normalne
+wywoalnie funkcji abort, generujacej sygnal SIGABORT po czym odebranie sygnalu - konczenie awaryjne
+Funkcja _exit natychmiast kończy działanie programu i powoduje powrót do jądra systemu. Funkcja exit natomiast,
+dokonuje pewnych operacji porządkowych - kończy działanie procesu, który ją wykonał i powoduje przekazanie w
+odpowiednie miejsce tablicy procesów wartości status, która może zostać odebrana i zinterpretowana przez proces macierzysty.
+
+KILL:
+Polecenie kill przesyła sygnał do wskazanego procesu w systemie. Standardowo wywołanie programu powoduje wysyłanie sygnału
+nakazującego procesowi zakończenie pracy. Proces zapisuje wtedy swoje wewnętrzne dane i kończy pracę. Kill może przesyłać
+procesom różnego rodzaju sygnały. Są to na przykład:
+    SIGTERM – programowe zamknięcie procesu (15, domyślny sygnał)
+    SIGKILL – unicestwienie procesu, powoduje utratę wszystkich zawartych w nm danych (9)
+    SIGSTOP – zatrzymanie procesu bez utraty danych
+    SIGCONT – wznowienie zatrzymanego procesu
+Czasami może zdarzyć się sytuacja, iż proces nie chce się zamknąć sygnałem SIGTERM, bo jest przez coś blokowany.
+Wtedy definitywnie możemy go unicestwić sygnałem SIGKILL, lecz spowoduje to utratę danych wewnętrznych procesu.
+
+
+Laboratorium 4
+Wysylanie sygnalow: 
+Funkcja kill służy do przesyłania sygnału do wskazanego procesu w systemie. Wymaga dołączenia
+nagłówków sys/types.h and signal.h
+pid > 0 sygnał jest wysyłany do procesu o identyfikatorze pid
+pid = 0 sygnał jest wysyłany do wszystkich procesów w grupie procesu wysyłającego sygnał
+pid = -1 sygnał jest wysyłany do wszystkich procesów w systemie, z wyjątkiem procesów specjalnych,
+na przykład procesu init; nadal obowiązują ograniczenia związane z prawami
+pid < -1 sygnał jest wysyłany do wszystkich procesów we wskazanej grupie -pid
+kill zwraca 0 jesli wykonal sie dobrze, zwraca -1 jesli byl blad i ustawia errno
+
+int raise(int signal)
+Wywołanie raise() jest
+równoważne z wywołaniem kill(getpid(), sig);
+
+
+int sigqueue(pid_t pid, int sig, const union sigval value) Funkcja ta wysyła sygnał sig do procesu o danym pid.
+Jeśli przekazany pid jest równy 0 sygnał nie zostanie, natomiast nastąpi sprawdzenie ewentualnych błędów, które mogłyby nastąpić przy wysyłaniu.
+
+union sigval {
+    int sival_int;
+    void *sival_ptr;
+} 
+union sigval value moze sluzyc do przekazywania wartosc
+
+Odbieranie sygnalow:
+signal(int signo, void (*func)())
+- signo - na jaki sygnal reaguje. 
+- func - wskaznik na funkcje ktora sie wywola po odebraniu sygnalu. 
+signal zwraca wskaznik na funkcje ktora wczesniej byla ustawiona na obsluge sygnalu
+Zamiast wskaźnika na funkcję func można również przekazać jedną z dwóch zmiennych: SIG IGN, oznaczającą
+ignorowanie sygnału lub SIG DEF, oznaczającą domyślną reakcję na sygnał.
+
+Odbieranie sygnalow:
+int sigaction(int sig_no, const struct sigaction *act, struct sigaction *old_act); 
+    sig_no - numer sygnału, którego akcja ma być ustawiona/pobrana,
+    act - wskaźnik na strukturę struct sigaction, która opisuje nową akcję, która ma być ustawiona dla danego sygnału 
+      (jeśli jest NULL, to akcja nie zostanie zmieniona),
+    old_act - wskaźnik na strukturę struct sigaction, która służy do przechowania poprzedniej akcji dla danego sygnału 
+      (jeśli jest NULL, to poprzednia akcja nie jest zwracana).
+
+struct sigaction{
+    void (*sa_handler)();   /* Wskaźnik do funkcji obsługi sygnału*/
+    sigset_t sa_mask;       /* Maska sygnałów – czyli zbiór sygnałów blokowanych podczas obsługi
+                                bieżącego sygnału, sygnał przetwarzany jest blokowany domyślnie */
+    int sa_flags;           /* Nadzoruje obsługę sygnału przez jądro*/
+};
+
+sa_mask zawiera zbiór sygnałów, które mają być zablokowane na czas wykonania tej funkcji. W ten sposób
+możemy się zabezpieczyć przed odebraniem jakiegoś sygnału (i w konsekwencji wykonaniem jego funkcji)
+w czasie, kiedy jeszcze wykonuje się funkcja obsługująca inny sygnał. W szczególności drugie obsłużenie tego
+samego sygnału podczas obsługiwania pierwszego jego egzemplarza jest zawsze blokowane.
+
+Czekanie na sygnaly:
+
+void pause();
+Zawiesza wywołujący proces aż do chwili otrzymania dowolnego sygnału. Jeśli sygnał jest ignorowany przez
+proces, to funkcja pause też go ignoruje. Najczęściej sygnałem, którego oczekuje pause jest sygnał pobudki SIGALARM.
+
+unisigned int sleep(unsigned int seconds);
+Usypia wywołujący ją proces na określoną w argumencie liczbę sekund. Funkcja zwraca 0 lub liczbę sekund,
+pozostających do zakończenia drzemki. Sprawia, że proces wywołujący ją jest zawieszany, dopóki nie zostanie
+wyzerowany licznik czasu określający czas pozostający do końca drzemki lub proces przechwyci sygnał, a
+procedura jego obsługi po zakończeniu pracy wykona return. . Funkcja zdefiniowana w bibliotece unistd.h
+
+unsigned int alarm (unsigned int sec);
+Ustala czas, po jakim zostanie wygenerowany jednorazowo sygnał SIGALARM. Jeśli nie ignorujemy lub nie
+przechwytujemy tego sygnału, to domyślną akcją jest zakończenie procesu. Funkcja zdefiniowana w bibliotece unistd.h
+
+Zbiory sygnalow:
+int sigemptyset ( sigset_t* signal_set );
+Inicjalizacja pustego zbioru sygnałów
+int sigfillset ( sigset_t* signal_set );
+Inicjalizacja zestawu zawierającego wszystkie sygnały istniejące w systemie
+int sigaddset ( sigset_t* signal_set, int sig_no );
+int sigdelset ( sigset_t* signal_set, int sig_no );
+Usunięcie pojedynczego sygnału z zestawu.
+int sigismember ( sigset_t *signal_set, int sig_no ); 
+Sprawdzenie, czy w zestawie znajduje się dany sygnał.
+
+Maskowanie - blokowanie sygnalow:
+Można poinformować jądro o tym iż nie chcemy, aby przekazywano sygnały bezpośrednio do danego procesu.
+Do tego celu wykorzystuje się zbiory sygnałów zwane maskami. Kiedy jądro usiłuje przekazać do procesu
+sygnał, który aktualnie jest blokowany, to zostaje on przechowany do momentu jego odblokowania lub
+ustawienia ignorowania tego sygnału przez proces.
+
+int sigprocmask(int how, const sigset_t *new_set, sigset_t *old_set);
+ustawiamy maske sygnalow maskowanych
+Parametr how definiuje sposób uaktualnienia maski sygnałów. Może przyjmować następujące wartości:
+    SIG_BLOCK - nowa maska to połączenie maski starej i nowej (new_set - zbiór sygnałów, które chcemy blokować).
+    SIG_UNBLOCK - maska podana jako argument to zbiór sygnałów, które chcemy odblokować.
+    SIG_SETMASK - nadpisujemy starą maskę nową.
+Do parametru old_set zostanie zapisana poprzednia maska.
+
+include <sys/types.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <signal.h>
+sigset_t oldmask, blockmask;
+pid_t mychild;
+sigfillset(&blockmask);
+if (sigprocmask(SIG_SETMASK, &blockmask, &oldmask) == -1) {
+    perror("Nie udało się zablokować wszystkich sygnałów");
+    exit(1);
+}
+if ((mychild = fork()) == -1) {
+    perror("Nie powołano procesu potomnego");
+    exit(1);}
+else if (mychild == 0) {
+    if (sigprocmask(SIG_SETMASK, &oldmask, NULL) == -1){
+        perror("Proces potomny nie odtworzył maski sygnałów");
+        exit(1);
+    }
+    /* .....kod procesu potomnego ..... */
+    } else {
+        if (sigprocmask(SIG_SETMASK, &oldmask, NULL) == -1){
+            perror("Proces macierzysty nie odtworzył maski sygnałów ");
+            exit(1);
+        }
+        /* ..... kod procesu macierzystego..... */ }
+
+Czekanie na sygnaly:
+int sigpending(sigset_t *set); 
+Służy do odczytania listy sygnałów, które oczekuję na odblokowanie w danym procesie
+Do zmiennej set zapisywany jest zestaw oczekujących sygnałów
+
+int sigsuspend(cost sigset_t *set); 
+Służy do odebrania sygnału oczekującego
+Tymczasowo zastępuje procesową maskę sygnałów na tę wskazaną parametrem set, a także wstrzymuje
+działanie procesu do momentu, kiedy nadejdzie odblokowany sygnał. Po obsłudze sygnału ponownie jest
+ustawiana maska sprzed wywołania sigsuspend. 
+Zwraca -1 jeśli otrzymany sygnał nie powoduje zakończenia procesu.
+
+Dziedziczenie
+    - Po wykonaniu funkcji fork proces potomny dziedziczy po swoim przodku wartości maski sygnałów i
+      ustalenia dotyczące obsługi sygnałów.
+    - Nieobsłużone sygnały procesu macierzystego są czyszczone.
+    - Po wykonaniu funkcji exec maska obsługi sygnałów i nieobsłużone sygnały są takie same jak w procesie,
+      w którym wywołano funkcję exec.
+
+Laboratorium 5
+Potoki nienazwane - nie oferuje komunikacji dwukierunkowej.
+Tworzenie potoku nienazwanego odbywa sie za pomoca funkcji 
+int pipe(int fd[2]);  
+zapis -fd[1], odczyt fd[0].
+Jesli nie uda sie utworzyc potoku funkcja zwraca -1. W przypadku sukcesu zwraca 0. 
+Z racji ze komunikacja jest jednokierunkowa kazda strona powinna
+natychmiastowo zamknac nie uzywany deskryptor za pomoca funkcji close()
+
+Jesli stworzymy proces potomny otrzymuje on otwarte deskryptory plikow procesu macierzystego
+Aby uzyskac komunikacje dwukierunkowa nalezy stworzyc 2 potoki.
+
+Przekierowanie wejścia i wyjścia standardowego
+Powyższe sposoby są wystarczające, jeśli chcemy komunikować się z procesami, które wykonują kod programu, w którym wywołujemy funkcję fork. 
+Czasem chcemy jednak wywołać program zewnętrzny poprzez fork + exec i np. przekazać jakieś dane na jego wejście standardowe, lub stworzyć pipeline 
+przetwarzający dane poprzez "przepuszczenie" danych przez kilka programów. Aby tego dokonać, możemy ustawić w stworzonych procesach wejście/wyjście 
+standardowe na odpowiednie deskryptory potoku używając funkcji dup2:
+
+int dup2(int oldfd, int newfd);
+
+Jej działanie polega na skopiowaniu deskryptora oldfd na miejsce deskryptora o numerze newfd i w razie potrzeby uprzednim zamknięciu newfd 
+(chyba, że oldfd i newfd są równe, wtedy wywołanie nie robi nic). Podmiana wejścia/wyjścia standardowego sprowadza się do skopiowania deskryptora 
+potoku na miejsce STDIN_FILENO / STDOUT_FILENO. Przykładowy kod wywołania grep-a i podmiany jego wejścia standardowego na potok:
+
+int fd[2];
+pipe(fd);
+pid_t pid = fork();
+if (pid == 0) { // dziecko
+    close(fd[1]); 
+    dup2(fd[0],STDIN_FILENO);
+    execlp("grep", "grep","Ala", NULL);
+} else { // rodzic
+    close(fd[0]);
+    // write(fd[1], ...) - przesłanie danych do grep-a
+}
+
+FILE* popen(const char* command, const char* type);
+int pclose(FILE* stream);
+popen tworzy potok, nowy proces, ustawia jego wejście lub wyjście standardowe na stosowną końcówkę potoku 
+(zależnie od wartości argumentu type - "r" oznacza, że chcemy odczytać wyjście procesu, "w" że chcemy pisać na jego wejście) 
+oraz uruchamia w procesie potomnym shell (/bin/sh) podając mu wartość command jako polecenie do zinterpretowania. Jeśli operacja ta się powiedzie, 
+popen zwraca obiekt FILE*, którego można używać z funkcjami wejścia/wyjścia biblioteki standardowej C.
+
+Potoki nazwane - wykorzystuja pliki do identyfikacji potoku. Pozwala nam to na komunikacje miedzy procesami ktore nie
+posiadaja wspolnego przodka
+int mkfifo(const char *pathname, mode_t mode); - tworzy potok nazwany. Zwraca 0 w przypadku sukcesu i -1 w przypadku bledu oraz ustawia errno
+int mkfifoat(int dirfd, const char *pathname, mode_t mode); - umozliwia tworzenie potoku w innych katalogach

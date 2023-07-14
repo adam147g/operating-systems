@@ -1,0 +1,2 @@
+tar cvzf AdamGorka-cw01.tar.gz zad1.c zad2.c
+       //   nazwa tar'a   // // pliki do załączenia//

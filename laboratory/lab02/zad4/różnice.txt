@@ -1,0 +1,4 @@
+Program z ftw() wyświetla nazwy i rozmiary plików, 
+polecenie find z wc zlicza jedynie ilość bajtów w plikach. 
+Polecenie find pozwala na bardziej zaawansowane wyszukiwanie plików, 
+np. według ich rozmiaru, daty modyfikacji czy właściciela.

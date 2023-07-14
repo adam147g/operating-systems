@@ -1,0 +1,5 @@
+Program wypisuje rozmiar każdego pliku oraz sumaryczny rozmiar, 
+a polecenie wc wyświetla tylko sumę bajtów wszystkich plików, bez wypisania, 
+które z plików mają jakie rozmiary. 
+Program nie uwzględnia plików ukrytych, a polecenie wc --bytes * 
+zlicza wszystkie pliki, włącznie z plikami ukrytymi.

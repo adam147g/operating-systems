@@ -1,0 +1,15 @@
+    Czas zlecenia   |Indeks klienta|Typ zlecenia
+Mon Apr 24 19:36:30 2023  | -200979943 | INIT
+Mon Apr 24 19:36:34 2023  | -133871079 | INIT
+Mon Apr 24 19:36:41 2023  | 1 | LIST
+Mon Apr 24 19:36:49 2023  | 0 | STOP
+Mon Apr 24 19:36:53 2023  | 1 | LIST
+Mon Apr 24 19:36:56 2023  | 33901081 | INIT
+Mon Apr 24 19:37:04 2023  | 302336537 | INIT
+Mon Apr 24 19:37:08 2023  | 2 | LIST
+Mon Apr 24 19:37:21 2023  | 2 | TOALL
+Mon Apr 24 19:37:37 2023  | 0 | TOONE
+Mon Apr 24 19:37:50 2023  | 2 | LIST
+Mon Apr 24 19:37:53 2023  | 1 | STOP
+Mon Apr 24 19:37:56 2023  | 0 | STOP
+Mon Apr 24 19:37:59 2023  | 2 | LIST

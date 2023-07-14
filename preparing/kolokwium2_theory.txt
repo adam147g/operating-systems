@@ -1,0 +1,543 @@
+Laboratorium 6
+Kolejki komunikatów - materiały pomocnicze
+Mechanizmy IPC
+
+Podobnie jak łącza, mechanizmy IPC (Inter Process Communication) jest grupą mechanizmów komunikacji 
+i synchronizacji procesów działających w ramach tego samego systemu operacyjnego. Mechanizmy IPC obejmują:
+    kolejki komunikatów — umożliwiają przekazywanie określonych porcji danych,
+    pamięć współdzieloną — umożliwiają współdzielenie kilku procesom tego samego fragmentu wirtualnej przestrzeni adresowej,
+    semafory — umożliwiają synchronizacje procesów w dostępie do współdzielonych zasobów (np. do pamięci współdzielonej)
+
+SYSTEM V
+key_t ftok(char *pathname, char proj);
+tworzenie unikalnego klucza
+    pathname	-	nazwa ścieżkowa pliku,
+    proj	-	jednoliterowy identyfikator projektu.
+
+Polecenia systemowe
+Polecenie ipcs wyświetla informacje o wszystkich obiektach IPC istniejących w systemie
+ipcs [ -asmq ] [ -tclup ]
+ipcs [ -smq ] -i id
+
+Wybór konkretnego mechanizmu umożliwiają opcje:
+-s	-	semafory,
+-m	-	pamięć dzielona,
+-q	-	kolejki komunikatów,
+-a	-	wszystkie mechanizmy (ustawienie domyślne).
+
+Dodatkowo można podać identyfikator pojedyńczego obiektu -i id, aby otrzymać informacje tylko o nim.
+
+Dowolny obiekt IPC można usunąć posługując się poleceniem:
+ipcrm [ shm | msg | sem ] id
+
+gdzie:
+shm, msg, sem	-	specyfikacja mechanizmu, kolejno: pamięć dzielona, kolejka komunikatów, semafory,
+id	-	identyfikator obiektu.
+
+W pliku include/linux/msg.h zdefiniowane są ograniczenia na liczbę i wielkość kolejek oraz komunikatów w nich umieszczanych:
+
+#define MSGMNI 128    /* <= 1K    max # kolejek komunikatow          */
+#define MSGMAX 4056   /* <= 4056  max rozmiar komunikatu (w bajtach) */
+#define MSGMNB 16384  /* ?        max wielkosc kolejki (w bajtach)   */
+
+Struktura msqid_ds
+
+Dokładna definicja struktury msqid_ds z pliku include/linux/msg.h:
+
+/* jedna struktura msg dla kazdej kolejki w systemie */
+struct msqid_ds {
+  struct ipc_perm     msg_perm;
+  struct msg         *msg_first;    /* pierwszy komunikat w kolejce */
+  struct msg         *msg_last;     /* ostatni komunikat w kolejce */
+  __kernel_time_t     msg_stime;    /* czas ostatniego msgsnd */
+  __kernel_time_t     msg_rtime;    /* czas ostatniego msgrcv */
+  __kernel_time_t     msg_ctime;    /* czas ostatniej zmiany */
+  struct wait_queue  *wwait;
+  struct wait_queue  *rwait;
+  unsigned short      msg_cbytes;   /* liczba bajtow w kolejce */
+  unsigned short      msg_qnum;     /* liczba komunikatow w kolejce */
+  unsigned short      msg_qbytes;   /* maksymalna liczba bajtow w kolejce */
+  __kernel_ipc_pid_t  msg_lspid;    /* pid ostatniego msgsnd */
+  __kernel_ipc_pid_t  msg_lrpid;    /* pid ostatniego receive*/
+};
+
+
+msg_perm
+Jest to instancja struktury ipc_perm, zdefiniowanej w pliku linux/ipc.h. Zawiera informacje o prawach dostępu do danej 
+kolejki oraz o jej założycielu.
+
+wwait, rwait
+Przydzielone danej kolejce komunikatów dwie kolejki typu wait_queue, na których spią procesy zawieszone podczas wykonywania 
+operacji odpowiednio czytania oraz pisania w danej kolejce komunikatów.
+
+Struktura msg
+
+
+struct msg {
+  struct msg *msg_next;   /* nastepny komunikat w kolejce */
+  long        msg_type;          
+  char       *msg_spot;
+  time_t      msg_stime;  /* czas wyslania tego komunikatu */
+  short       msg_ts;     /* dlugosc wlasciwej tresci komunikatu */
+};
+
+msg_type
+Typ przechowywanego komunikatu. Wysyłanemu do kolejki komunikatowi nadawca przypisuje dodatnią liczbę naturalną, stającą się jego typem. 
+Przy odbiorze komunikatu można zażądać komunikatów określonego typu (patrz opis funkcji msgrcv()).
+msg_spot
+Wskaźnik do miejsca w pamięci, gdzie przechowywana jest właściwa treść komunikatu. Na każdy komunikat przydzielane jest oddzielne miejsce w pamięci.
+msgget() 
+uzyskanie identyfikatora kolejki komunikatów używanego przez pozostałe funkcje,
+msgctl() 
+ustawianie i pobieranie wartości parametrów związanych z kolejkami komunikatów oraz usuwanie kolejek,
+msgsnd() 
+wysłanie komunikatu,
+msgrcv() 
+odebranie komunikatu.
+
+int msgget(key_t key, int msgflg);
+Pierwszym argumentem funkcji jest wartość klucza, porównywana z istniejacymi wartościami kluczy. Zwracana jest kolejka o podanym kluczu, 
+przy czym flaga IPC_CREAT powoduje utworzenie kolejki w przypadku braku kolejki o podanym kluczu, zaś flaga IPC_EXCL użyta z IPC_CREAT powoduje błąd EEXIST, 
+jeśli kolejka o podanym kluczu już istnieje. Wartość klucza równa IPC_PRIVATE zawsze powoduje utworzenie nowej kolejki.
+
+int msgsnd(int msqid, struct msgbuf *msgp, int msgsz, int msgflg);
+Pierwszym argumentem funkcji jest identyfikator kolejki. 
+msgp jest wskaźnikiem do struktury typu msgbuf, zawierającej wysyłany komunikat. 
+
+struct msgbuf {
+  long mtype;         /* typ komunikatu   */
+  char mtext[1];      /* tresc komunikatu */
+};
+
+int msgrcv(int msgqid, struct msgbuf *msgp, int msgsz, long type, int msgflg);
+    jeśli mtype = 0, to otrzymamy najstarszy komunikat w kolejce
+    jeśli mtype > 0, to otrzymamy komunikat odpowiedniego typu
+    jeśli mtype< 0, to otrzymamy komunikat najmniejszego typu mniejszego od wartości absolutnej mtype
+    jeśli msgflg jest ustawiona na MSG_EXCEPT, to otrzymamy dowolny komunikat o typie rożnym od podanego
+
+Ponadto, flaga IPC_NOWAIT w przypadku braku odpowiedniego komunikatu powoduje natychmiastowe wyjście z błędem, zaś MSG_NOERROR powoduje brak błędu w przypadku, 
+gdy komunikat nie mieści się w buforze (zostaje przekopiowane tyle, ile się mieści).
+
+int msgctl(int msgqid, int cmd, struct msqid_ds *buf);
+Dopuszczalne komendy to:
+    IPC_STAT: uzyskanie struktury msgid_ds odpowiadającej kolejce (zostaje ona skopiowana pod adres wskazywany przez buf)
+    IPC_SET: modyfikacja wartości struktury ipc_perm odpowiadającej kolejce
+    IPC_RMID: skasowanie kolejki
+
+POSIX
+Struktura struct mq_attr
+
+struct mq_attr {
+    long mq_flags;    /* sygnalizator kolejki: 0, O_NONBLOCK */
+    long mq_maxmsg;   /* maksymalna liczba komunikatów w kolejce */
+    long mq_msgsize;  /* maksymalny rozmiar komunikatu (w bajtach)  */
+    long mq_curmsgs;   /* liczba komunikatów w kolejce */
+};
+
+Otwieranie kolejki
+mqd_t mq_open(const char *name, int oflag [, mode_t mode, struct mq_attr *attr]);
+
+Funkcja ta próbuje otworzyć kolejkę komunikatów (która tak naprawdę jest plikiem o nazwie name). Zwraca deskryptor kolejki, jeśli się powiedzie lub -1 w przypadku błędu.
+
+Uwaga! Nazwa musi zaczynać się od znaku /
+Parametr oflag: O_RDONLY, O_WRONLY, O_RDWR, można zsumować logicznie z wartościami: O_CREAT, O_EXCL oraz O_NONBLOCK (aby używać tych stałych należy dołączyć plik nagłówkowy fcntl.h).
+
+int mq_close(mqd_t mqdes);
+Funkcja ta zamyka kolejkę o deskryptorze mqdes
+
+int mq_unlink(const char *name);
+Usuwa z systemu kolejkę o nazwie name
+
+int mq_getattr(mqd_t mqdes, struct mq_attr *attr);
+Odczytuje parametry kolejki o deskryptorze mqdes i zapisuje je w miejscu wskazywanym przez attr
+
+int mq_setattr(mqd_t mqdes, const struct mq_attr *attr, struct mq_attr *oattr);
+Ustawia parametry kolejki o deskryptorze mqdes wskazywane przez attr. Jeśli oattr nie wskazuje na NULL, to zapisywane są w tym miejscu stare parametry kolejki. 
+
+int mq_send(mqd_t mqdes, const char* ptr, size_t len, unsigned int prio);
+Wysyła komunikat wskazywany przez ptr do kolejki o deskryptorze mqdes o długości len i priorytecie prio
+
+ssize_t mq_receive(mqd_t mqdes, char *ptr, size_t len, unsigned int *priop);
+Odbiera komunikat z kolejki o deskryptorze mqdes o długości len (co najmniej tyle, ile w polu mq_msgsize w strukturze struct mq_attr). 
+Dane zapisuje do ptr, a priorytet do priop (o ile priop nie jest NULL). Zwraca liczbę odczytanych bajtów w przypadku powodzenia lub -1 w przypadku błędu.
+
+int mq_notify(mqd_t mqdes, const struct sigevent *notification);
+Funkcja ta powoduje zarejestrowanie (gdy notification nie jest równe NULL) lub wyrejestrowanie (gdy notifiation jest NULL) mechanizmu powiadomień dla kolejki o deskryptorze mqdes.
+
+struct sigevent {
+    int          sigev_notify;  /* sygnał czy wątek: SIGEV_NONE, SIGEV_SIGNAL, SIGEV_THREAD */
+    int          sigev_signo;   /* numer sygnału (dla SIGEV_SIGNAL) */
+    union sigval sigev_value;   /* przekazywane procedurze obsługi sygnału lub wątkowi */
+    /* dla SIGEV_THREAD występują jeszcze: */
+    void (*sigev_notify_function)(union sigval);
+    pthread_attr_t *sigev_notify_attributes;
+};
+
+union sigval {
+    int   sival_int;   /* wartość całkowitoliczbowa */
+    void *sival_ptr; /* wskaźnik */
+};
+
+Laboratorium 7
+Semafory
+Operacje na semaforach systemu V są zdefiniowane w pliku nagłówkowym sys/sem.h Dodatkowo warto również dołączyć pliki nagłówkowe sys/ipc.h i sys/types.h
+
+int semget(key_t key, int nsems, int flag);
+Funkcja ta zwraca identyfikator zbioru semaforów, który można następnie wykorzystać w innych funkcjach operujących na semaforach. 
+    - key wskazuje klucz zbioru semaforów, 
+    - flag przekazywane są flagi modyfikujące proces tworzenia obiektu IPC (patrz materiały do Laboratorium 6). 
+    - Liczba semaforów do utworzenia przekazywana jest w argumencie nsems. 
+Funkcję semget można również wykorzystać do pobrania identyfikatora istniejącego już zbioru semaforów (np. utworzonego przez inny proces). 
+Wówczas wartość nsems powinna wynosić 0. Bezpośrednio po utworzeniu, wartości semaforów są niezdefiniowane. Należy je zainicjalizować, np. za pomocą funkcji semctl (patrz poniżej).
+
+int semop(int semid, struct sembuf *sops, unsigned nsops);
+Funkcja ta wykonuje operacje na zbiorze semaforów o identyfikatorze semid. Liczba operacji do wykonania jest zdefiniowana w argumencie nsops 
+Same operacje przekazywane są w tablicy sops (zawierającej nsops elementów). Każda operacja zdefiniowana jest jako struktura postaci:
+
+struct sembuf 
+{
+   unsigned short sem_num;
+   short sem_op;
+   short sem_flg;
+};  
+
+gdzie:
+    sem_num to numer semafora (w zbiorze) na którym należy wykonać operację,
+    sem_op to operacje do wykonania,
+    sem_flg to flagi operacji.
+
+Wartość sem_op < 0 oznacza operację zmniejszenia wartości semafora o sem_op 
+Wartość sem_op > 0 oznacza operację zwiększenia wartości semafora o sem_op  
+Wartość sem_op == 0 oznacza operację oczekiwania, aż wartość semafora będzie wynosić 0. 
+sem_flg zdefiniowano dwie istotne flagi: 
+    Flaga IPC_NOWAIT oznacza, iż operacja nie powinna blokować procesu. 
+      Jeśli operacji nie można wykonać (ze względu na wartość semafora) i ustawiona jest flaga IPC_NOWAIT, funkcja semop zwróci błąd. 
+    Flaga SEM_UNDO oznacza, że w przypadku zakończenia procesu operacja wykonana na semaforze powinna zostać cofnięta.
+
+Funkcja semctl, pozwala wykonać pewne dodatkowe operacje na zbiorze semaforów. Funkcja ta ma sygnaturę:
+int semctl(int semid, int semnum, int cmd, union semun arg);
+
+gdzie:
+    semid to identyfikator zbioru semaforów,
+    semnum to numer semafora w zbiorze,
+    cmd to operacja do wykonania,
+    arg to unia bitowa przekazująca pewne dodatkowe argumenty.
+
+Najważniejsze operacje (cmd) do wykonania za pomocą funkcja semctl to:
+    SETVAL ustawienie wartości semafora na liczbę przekazaną w polu arg.val
+    GETVAL pobranie wartości semafora,
+    IPC_RMID usunięcie zbioru semaforów z systemu.
+
+Semafory w IPC POSIX.
+
+sem_t *sem_open(const char *name, int oflag, mode_t mode, unsigned int value);
+Funkcja ta zwraca adres utworzonego semafora
+    - name określa nazwę semafora, 
+    - oflag określa tryb otwarcia (patrz materiały do Laboratorium 6). Argument value określa początkową wartość semafora. 
+    - Inkrementację semafora (o wartość 1) realizuje funkcja sem_post
+
+int sem_post(sem_t *sem);
+Funkcja ta przyjmuje wskaźnik na semafor i zwraca 0 w przypadku sukcesu oraz -1 w przypadku wystąpienia błędu. 
+Dekrementacja semafora realizowana jest analogicznie zdefiniowaną funkcją sem_wait
+
+int *sem_wait(sem_t *sem);
+Funkcja ta posiada również wariant nieblokującysem_trywait
+
+int *sem_trywait(sem_t *sem);
+Jeśli dekrementacja semafora nie jest możliwa (semafor ma wartość 0) funkcja sem_trywait nie blokuje procesu, 
+lecz zwraca wartość -1 i ustawia zmienną errno na EAGAIN.
+POSIX pozwala również odczytać aktualną wartość semafora. Służy do tego funkcja sem_getvalue
+
+int sem_getvalue(sem_t *sem, int *valp);
+Aktualna wartość semafora zapisywana jest pod adresem wskazywanym przez argument valp
+Po zakończeniu pracy z semaforem należy go zamknąć. Służy do tego funkcja sem_close
+
+int sem_close(sem_t *sem);
+Semafor usuwamy za pomocą funkcji sem_unlink.
+
+Funkcje sem_getvalue oraz sem_close zwracają 0 w przypadku sukcesu oraz -1 w przypadku wystąpienia błędu.
+
+Pamięć wspólna w IPC systemu V:
+Aby stworzyć segment pamięci wspólnej korzystamy z funkcji shmget
+int shmget(key_t key, size_t size, int shmflg); 
+
+Dołączenie segmentu pamięci wspólnej do przestrzeni adresowej procesu realizuje funkcja shmat
+void *shmat(int shmid, const void *shmaddr, int shmflg);
+
+Po zakończeniu pracy z segmentem należy go odłączyć, korzystając z funkcji shmdt
+int shmdt(const void *shmaddr);
+
+void *shmctl(int shmid, int cmd, struct shmid_ds *buf);
+Pozwala ona, między innymi, usunąć segment pamięci wspólnej z systemu
+
+Pamięć wspólna w IPC POSIX:
+
+Do utworzenia segmentu pamięci wspólnej (lub otwarcia istniejącego już segmentu) służy funkcja shm_open
+int shm_open(const char *name, int oflag, mode_t mode);
+
+Po utworzeniu segmentu należy określić jego rozmiar. W tym celu należy skorzystać z funkcji ftruncate
+int ftruncate(int fd, off_t length);
+
+Otwarty segment pamięci wspólnej należy dołączyć do przestrzeni adresowej procesu. Operację tą można zrealizować za pomocą funkcji mmap
+void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset);
+
+    addr określa adres pod którym powinien zostać dołączony segment pamięci wspólnej; zaleca się przekazanie wartości NULL, wskazującej, 
+        że system sam powinien dobrać odpowiedni adres,
+    len to liczba bajtów segmentu mapowanych do przestrzeni adresowej procesu,
+    prot określa prawa dostępu do mapowanej pamięci; prawa te są określane flagami PROT_READ (odczyt), PROT_WRITE (zapis),
+        PROT_EXEC (prawo wykonania), PROT_NONE (brak uprawnień),
+    flags - specyfikacja użycia segmentu (np. MAP_SHARED, MAP_PRIVATE, MAP_FIXED)
+    fd jest deskryptorem plików zwróconym przez funkcję shm_open,
+    offset określa przesunięcie mapowanego obszaru względem początku segmentu pamięci wspólnej; z reguły przyjmuje wartość 0.
+
+Po zakończeniu pracy z segmentem pamięci wspólnej należy go odłączyć od przestrzeni adresowej procesu. Służy do tego funkcja munmap
+int munmap(void *addr, size_t len);
+
+W argumencie addr należy przekazać adres, pod którym segment został dołączony a w argumencie len rozmiar segmentu. Odłączony segment można 
+    następnie oznaczyć do usunięcia. Służy do tego funkcja shm_unlink
+int shm_unlink(const char *name);
+
+Laboratorium 8
+WĄTKI
+Do tworzenia nowych wątków służy funkcja pthread_create
+
+int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine) (void *), void *arg)
+gdzie
+    thread - wskaźnik na miejsce gdzie zapisany zostanie identyfikator utworzonego wątku
+    attr - dodatkowe ustawienia (opcjonalne, NULL = ustawienia domyślne)
+    start_routine - adres funkcji, która ma zostać wykonana w utworzonym wątku
+    arg - argument, z którym ma zostać wywołana
+
+Typ identyfikatora wątku pthread_t jest zależny od implementacji - może nie być to typ całkowitoliczbowy. Do porównywania równości dwóch wartości 
+typu pthread_t służy funkcja pthread_equal:
+int pthread_equal(pthread_t tid1, pthread_t tid2);
+
+zwracająca 0 jeśli tid1 nie jest równy tid2. Swój własny identyfikator wątek może pobrać przy użyciu pthread_self:
+pthread_t pthread_self(void);
+
+Argument attr pozwala kontrolować różne aspekty działania tworzonego wątku. Przed przekazaniem adresu struktury pthread_attr_t należy ją 
+zainicjalizować przy użyciu funkcji pthread_attr_init:
+int pthread_attr_init(pthread_attr_t *attr);
+
+Po wywołaniu pthread_create należy zwolnić potencjalnie zaalokowane przez to wywołanie zasoby używając funkcji pthread_attr_destroy:
+int pthread_attr_destroy(pthread_attr_t *attr);
+
+
+Działanie wątku może zostać zakończone w wyniku kilku zdarzeń:
+    jeśli wątek główny zakończy swoje działanie poprzez zwrócenie wartości z funkcji main, cały proces (wszystkie jego wątki) kończy swoje działanie
+    jeśli którykolwiek wątek procesu wywoła exit, _Exit lub _exit, cały proces kończy swoje działanie
+    jeśli którykolwiek wątek otrzyma sygnał, którego domyślnym sposobem obsługi jest zakończenie procesu, cały proces kończy swoje działanie
+    jeśli wątek zwróci wartość ze swojej funkcji, kończy on swoje działanie
+    jeśli wątek wywoła pthread_exit, kończy on swoje działanie
+    jeśli wątek zostanie anulowany przez inny wątek, kończy on swoje działanie
+
+void pthread_exit(void *rval_ptr);
+przyjmuje wartość która zostanie użyta jako wartość zwrócona przez wątek. Zwrócenie wartości val z funkcji wątku jest równoważne z wywołaniem pthread_exit(val)
+ (poza wątkiem głównym - w nim zwrócenie val jest równoważne z exit(val)). Wywołanie pthread_exit z wątku głównego powoduje zakończenie wątku głównego, 
+ ale pozostałe wątki nadal mogą działać - cały proces zakończy się wówczas dopiero gdy zakończą swoje działanie wszystkie utworzone wątki, a kodem wyjścia procesu będzie 0.
+
+Przerwać działanie wątku z innego wątku można przy pomocy funkcji pthread_cancel:
+
+int pthread_cancel(pthread_t tid);
+Reakcja wątku na bycie anulowanym zależy od jego ustawień. Wątek może dopuszczać (zachowanie domyślne) lub odrzucać żądania anulowania, 
+sterować tym zachowaniem można przy użyciu funkcji pthread_setcancelstate
+
+int pthread_setcancelstate(int state, int *oldstate);
+podając jako pierwszy argument PTHREAD_CANCEL_ENABLE lub PTHREAD_CANCEL_DISABLE. Anulowanie wątku z zablokowanym anulowaniem powoduje, 
+że wątek zostanie anulowany w chwili gdy z powrotem odblokuje możliwość anulowania. Jeśli wątek dopuszcza anulowanie, może to robić w dwóch trybach:
+    PTHREAD_CANCEL_DEFERRED (domyślnie) - wątek kontynuuje swoje działanie do momentu napotkania tzw. cancellation point
+    PTHREAD_CANCEL_ASYNCHRONOUS - wątek kończy swoje działanie natychmiast
+
+Zmienić tryb anulowania można przy pomocy funkcji pthread_setcanceltype:
+int pthread_setcanceltype(int type, int *oldtype);
+
+Cancellation point to wywołanie jednej z wymienionej jako takowy przez standard POSIX funkcji (np. read, write, pause). W szczególności cancellation point stanowi wywołanie funkcji pthread_testcancel.
+
+Domyślnie po zakończeniu działania wątku wartość którą zwrócił można pobrać przy użyciu funkcji pthread_join:
+int pthread_join(pthread_t thread, void **rval_ptr);
+
+Jeśli wątek został anulowany, pod rval_ptr zapisana zostanie wartość PTHREAD_CANCELED. Jeśli chcemy, by dane zakończonego wątku nie były przechowywane do czasu wywołania pthread_join, a były usuwane natychmiast, możemy wątek uczynić wątkiem odłączonym. Można to uczynić na dwa sposoby: w momencie tworzenia wątku, lub później.
+
+Aby utworzyć wątek od razu jako wątek odłączony, należy do pthread_create przekazać adres struktury pthread_attr_t po wywołaniu na niej pthread_attr_setdetachstate
+int pthread_attr_setdetachstate(pthread_attr_t *attr, int detachstate);
+
+jako drugi argument przekazując PTHREAD_CREATE_DETACHED.
+
+Istniejący wątek można po utworzeniu odłączyć przy użyciu funkcji pthread_detach:
+int pthread_detach(pthread_t tid);
+
+Wątki i sygnały
+
+Sygnały są dostarczane do jednego wątku w procesie. Sygnały związane ze zdarzeniami sprzętowymi są z reguły dostarczane do wątku, który je spowodował, pozostałe - arbitralnie.
+Wątki mają odrębne maski sygnałów, ale wspólne ustawienia ich obsługi (signal disposition). Do ustawienia maski sygnału wątku służy funkcja pthread_sigmask:
+int pthread_sigmask(int how, const sigset_t* set, sigset_t* oset);
+o sygnaturze identycznej do sigprocmask. Działanie sigprocmask dla programu wielowątkowego jest niezdefiniowane.
+
+Aby wysłać sygnał do konkretnego wątku, należy użyć funkcji pthread_kill lub pthread_sigqueue: 
+int pthread_kill(pthread_t thread, int signo);
+int pthread_sigqueue(pthread_t thread, int sig, const union sigval value);
+
+Laboratorium 9:
+MUTEX
+Mutex (MUTual EXclusion, wzajemne wykluczanie) jest blokadą, którą może uzyskać tylko jeden wątek. Mutexy służą głównie do realizacji sekcji krytycznych, 
+czyli bezpiecznego w sensie wielowątkowym dostępu do zasobów współdzielonych.
+
+Obiekt pthread_mutex_t (wzajemnego wykluczania) musi być przed użyciem zainicjalizowany, co odbywa się za pomocą funkcji pthread_mutex_init.
+int pthread_mutex_init (pthread_mutex_t *mutex, pthread_mutexattr_t *attr);
+
+    mutex - wcześniej stworzony przez nas mutex
+    attr - atrybuty tworzonego mutexu (domyślne ustawienia: NULL)
+
+Zablokowanie obiektu przez wątek może zostać wykonane poprzez jedną z następujących funkcji:
+
+    int pthread_mutex_lock(pthread_mutex_t *mutex) - która jeśli obiektu mutex-a jest zablokowany przez inny wątek usypia obecny wątek, aż mutex zostanie odblokowany. 
+     Z kolei jeśli obiekt mutex-a jest już zablokowany przez przez obecny wątek to albo:
+        usypia wywołujący ją wątek (jeśli jest to mutex typu "fast")
+        zwraca natychmiast kod błędu EDEADLK (jeśli jest to mutex typu "error checking")
+        normalnie kontynuuje prace, zwiększając licznik blokad mutex-a przez dany wątek (jeśli mutex jest typu "recursive"); odpowiednia liczba razy odblokowań musi 
+          nastąpić aby mutex powrócił do stanu "unlocked"
+    int pthread_mutex_trylock(pthread_mutex_t *mutex) - która zachowuje się podobnie jak powyższa, z tym że obecny wątek nie jest blokowany jeśli mutex jest już 
+      zablokowany przez inny wątek,a jedynie ustawia flagę EBUSY.
+    pthread_mutex_timedlock - jest rozwinięciem funkcji pthread_mutex_lock - podawany jest maksymalny czas czekania wątku na odblokowanie (zablokowanego przez inny wątek) mutex-a.
+
+Odblokowanie mutex-a wykonywane jest za pomocą funkcji pthread_mutex_unlock.
+
+PRZYKŁAD - Chronienie dostępu do zmiennej:
+
+int x;
+pthread_mutex_t x_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void my_thread_safe_function(...) {
+  /* Każdy dostęp do zmiennej x powinien się odbywać w następujący sposób: */
+  pthread_mutex_lock(&x_mutex);
+  /* operacje na x... */
+  pthread_mutex_unlock(&x_mutex);
+}
+...
+
+
+Warunki Sprawdzające (Condition Variables)
+Przy zmianie warunku muszą być podjęte następujące kroki:
+
+    - Zajęcie mutexa towarzyszącego zmiennej warunkowej
+    - Podjęcie akcji, która może zmienić warunek
+    - Zasygnalizowanie oczekującym wątkom zmiany warunku.
+    - Odblokowanie mutexa.
+
+int pthread_cond_init(pthread_cond_t *cond, pthread_condattr_t *attr) - inicjalizacja zmiennej
+int pthread_cond_destroy(pthread_cond_t *cond) - usunięcie zmiennej
+int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) - ustawia wątek w tryb oczekiwania w czasie, którego Mutex jest odblokowany
+int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex, const struct timespec *timeout) - usypia wątek na określoną ilość czasu
+int pthread_cond_broadcast(pthread_cond_t *cond) - powiadamia wszystkie oczekujące wątki
+int pthread_cond_signal(pthread_cond_t *cond) - powiadamia tylko jeden wątek
+
+
+Przykład użycia warunków sprawdzających:
+
+...
+
+int x,y;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond   = PTHREAD_COND_INITIALIZER;
+
+...
+
+
+// (Watek 1)
+// Czekanie aż x jest większe od y jest 
+// przeprowadzane następująco:
+
+pthread_mutex_lock(&mutex);
+while (x <= y) {
+    pthread_cond_wait(&cond, &mutex);
+}
+
+...
+
+pthread_mutex_unlock(&mutex);
+
+...
+
+
+// (Watek 2)
+// Kazda modyfikacja x lub y może
+// powodować zmianę warunków. Należy
+// obudzić pozostałe wątki, które korzystają
+// z tego warunku sprawdzającego.
+
+pthread_mutex_lock(&mutex);
+/* zmiana x oraz y */
+if (x > y) 
+    pthread_cond_broadcast(&cond);
+pthread_mutex_unlock(&mutex);
+
+
+
+INNY PRZYKŁAD
+#include <stdio.h>
+#include <pthread.h>
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+int sharedData = 0;
+
+void* threadFunction(void* arg) {
+    int threadId = *(int*)arg;
+
+    // Blokujemy mutex przed dostępem do współdzielonych danych
+    pthread_mutex_lock(&mutex);
+
+    // Oczekiwanie na spełnienie warunku
+    while (sharedData != threadId) {
+        pthread_cond_wait(&cond, &mutex);
+    }
+
+    // Po spełnieniu warunku, wykonujemy operacje
+    printf("Wątek %d: Wykonywanie operacji na współdzielonych danych.\n", threadId);
+    sharedData++;
+    printf("Wątek %d: Zaktualizowane współdzielone dane: %d\n", threadId, sharedData);
+
+    // Informujemy o spełnieniu warunku przez kolejny wątek
+    pthread_cond_signal(&cond);
+
+    // Odblokowujemy mutex po zakończeniu dostępu do współdzielonych danych
+    pthread_mutex_unlock(&mutex);
+
+    pthread_exit(NULL);
+}
+
+int main() {
+    pthread_t threads[3];
+    int threadIds[3] = {1, 2, 3};
+
+    // Tworzenie trzech wątków
+    for (int i = 0; i < 3; i++) {
+        if (pthread_create(&threads[i], NULL, threadFunction, &threadIds[i]) != 0) {
+            fprintf(stderr, "Błąd przy tworzeniu wątku %d.\n", i+1);
+            return 1;
+        }
+    }
+
+    // Czekamy na zakończenie działania wszystkich wątków
+    for (int i = 0; i < 3; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    return 0;
+}
+
+W tym przykładzie tworzone są trzy wątki, które wykonują operacje na współdzielonych danych w sekwencji. 
+Każdy wątek oczekuje na spełnienie warunku sharedData == threadId. Główny wątek ustawia sharedData na 1 
+i informuje o spełnieniu warunku poprzez wywołanie pthread_cond_signal(&cond). 
+Każdy wątek sprawdza warunek i wykonuje operacje na danych, a następnie inkrementuje sharedData. 
+Kolejny wątek zostaje obudzony, ponieważ warunek się spełnił. Wykonanie operacji powtarza się dla każdego wątku na zmianę.
+
+Przykładowy wynik działania może wyglądać następująco:
+
+
+Wątek 1: Wykonywanie operacji na współdzielonych danych.
+Wątek 1: Zaktualizowane współdzielone dane: 2
+Wątek 2: Wykonywanie operacji na współdzielonych danych.
+Wątek 2: Zaktualizowane współdzielone dane: 3
+Wątek 3: Wykonywanie operacji na współdzielonych danych.
+Wątek 3: Zaktualizowane współdzielone dane: 4

@@ -1,0 +1,4 @@
+make
+sudo find / -name libwc.so
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/adam147g/SysOpy/lab1/zad2/libwc.so
+./wc_repl_shared.exe

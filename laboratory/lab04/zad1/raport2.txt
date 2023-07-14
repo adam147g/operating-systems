@@ -1,0 +1,21 @@
+ignore: 
+SIGUSR1 is being ignored in child process
+
+handler: 
+SIGUSR1 ignored in exec
+signal no. 10 
+signal no. 10 
+child process:
+signal no. 10 
+
+mask: 
+SIGUSR1 waiting after being masked
+SIGUSR1 is masked in child process
+SIGUSR1 waiting after being masked
+
+pending: 
+SIGUSR1 is being masked in exec child process
+SIGUSR1 waiting after being masked
+parent's SIGUSR1 is not pending in child process
+parent's SIGUSR1 is pending in exec child process
+
